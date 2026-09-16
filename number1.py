@@ -8,7 +8,7 @@ from docx import Document
 from docx.shared import Inches
 
 monthly_count = defaultdict(int)
-all_news_data = []  # <-- ДОБАВЛЕНО: для хранения всех новостей (для docx)
+all_news_data = []
 
 url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created='
 response = requests.get(url)
@@ -39,12 +39,11 @@ with open('mai_news.csv', 'w', newline='', encoding='utf-8-sig') as file:
             break
 
         for new in news:
-            # --- ДОБАВЛЕНО: защита от None ---
             link_tag = new.select_one('.boldLink')
             date_tag_elem = new.select_one('.newsItem-date')
             if not link_tag or not date_tag_elem:
                 continue
-            # ---------------------------------
+
 
             htt = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + link_tag.get('href')
             title_tag = link_tag.text.strip()
@@ -52,9 +51,9 @@ with open('mai_news.csv', 'w', newline='', encoding='utf-8-sig') as file:
             print(htt, title_tag, date_tag)
             writer.writerow([htt, title_tag, date_tag])
 
-            # --- ДОБАВЛЕНО: сохраняем в список для docx ---
+
             all_news_data.append({'link': htt, 'title': title_tag, 'date': date_tag})
-            # -----------------------------------------------
+
 
             try:
                 date_obj = datetime.strptime(date_tag, '%d.%m.%Y')
@@ -63,12 +62,11 @@ with open('mai_news.csv', 'w', newline='', encoding='utf-8-sig') as file:
             except:
                 pass
 
-        # --- ДОБАВЛЕНО: защита от None у кнопки "next" ---
+
         next_btn = soup.select_one('.pager__item.pager__item--next a')
         last_btn = soup.select_one('.pager__item.pager__item--last a')
         if not next_btn or not last_btn:
             break
-        # -------------------------------------------------
 
         current_url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + next_btn.get('href')
         print(current_url)
@@ -87,9 +85,9 @@ print("-" * 50)
 print(f"{'ИТОГО:':<20} {sum(monthly_count.values()):<20}")
 print("=" * 50)
 
-# ============================================================
-# ДОБАВЛЕНО: построение графика распределения по месяцам
-# ============================================================
+
+# построение графика распределения по месяцам
+
 if monthly_count:
     sorted_months = sorted(monthly_count.keys(), key=lambda x: datetime.strptime(x, '%B %Y'))
     counts = [monthly_count[m] for m in sorted_months]
@@ -104,9 +102,6 @@ if monthly_count:
     plt.savefig('news_chart.png')
     print("\nГрафик сохранён в news_chart.png")
 
-    # ============================================================
-    # ДОБАВЛЕНО: генерация docx-отчёта с графиком и таблицей
-    # ============================================================
     doc = Document()
     doc.add_heading('Отчёт по новостям (Международное сотрудничество)', 0)
 
