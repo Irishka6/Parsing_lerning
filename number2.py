@@ -1,80 +1,107 @@
 import sqlite3
-import csv
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from collections import defaultdict
+import matplotlib.pyplot as plt
+import time
 
-connection = sqlite3.connect('monitoring.db')
-cursor = connection.cursor()
-cursor.execute('''CREATE TABLE IF NOT EXISTS Users(
-    id INT PRIMARY KEY,
-    head TEXT,
-    date TEXT,
-    http TEXT,
-    timeficks TEXT,
-    category TEXT);
-    ''')
 
 url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created='
-response = requests.get(url)
-html = response.text
-soup = BeautifulSoup(html, 'html.parser')
 
+
+# --- Подключение к БД ---
 while True:
-    if page == 1:
-        current_url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created='
+    connection = sqlite3.connect('monitoring.db')
+    cursor = connection.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS Users(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        head TEXT,
+        date TEXT,
+        http TEXT,
+        timeficks TEXT,
+        category TEXT);
+        ''')
+    MAX_PAGES = 10
+    INTERVAL = 60
+    page = 1
+    monthly_count = defaultdict(int)
 
-    if page > 1:
+
+
+    while page <= MAX_PAGES:
+        if page == 1:
+            current_url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created='
         try:
             response = requests.get(current_url, timeout=10)
         except requests.exceptions.RequestException as e:
             print(f"Ошибка запроса (страница {page}): {e}")
             print("Прерываем парсинг, переходим к отчёту...")
             break
+
         html = response.text
         soup = BeautifulSoup(html, 'html.parser')
-    news = soup.select('.newsItem')
 
-    if not news:
-        break
+        news = soup.select('.newsItem')
 
-    for new in news:
-        # --- ДОБАВЛЕНО: защита от None ---
-        link_tag = new.select_one('.boldLink')
-        date_tag_elem = new.select_one('.newsItem-date')
-        if not link_tag or not date_tag_elem:
-            continue
-        # ---------------------------------
+        if not news:
+            print(f"Страница {page} пуста, завершаем.")
+            break
 
-        htt = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + link_tag.get('href')
-        title_tag = link_tag.text.strip()
-        date_tag = date_tag_elem.text.strip()
-        print(htt, title_tag, date_tag)
-        writer.writerow([htt, title_tag, date_tag])
+        for new in news:
+            link_tag = new.select_one('.boldLink')
+            date_tag_elem = new.select_one('.newsItem-date')
+            if not link_tag or not date_tag_elem:
+                continue
 
-        # --- ДОБАВЛЕНО: сохраняем в список для docx ---
-        all_news_data.append({'link': htt, 'title': title_tag, 'date': date_tag})
-        # -----------------------------------------------
+            htt = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + link_tag.get('href')
+            title_tag = link_tag.text.strip()
+            date_tag = date_tag_elem.text.strip()
+            now = datetime.now().strftime('%d.%m.%Y %H:%M')
+            print(htt, title_tag, date_tag)
 
-        try:
-            date_obj = datetime.strptime(date_tag, '%d.%m.%Y')
-            month_key = date_obj.strftime('%B %Y')
-            monthly_count[month_key] += 1
-        except:
-            pass
+            # --- Запись в БД (с защитой от дублей) ---
+            cursor.execute('SELECT 1 FROM Users WHERE http = ?', (htt,))
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    'INSERT INTO Users(head, date, http, timeficks, category) VALUES (?, ?, ?, ?, ?)',
+                    (title_tag, date_tag, htt, now, 'Международное сотрудничество')
+                )
 
-    # --- ДОБАВЛЕНО: защита от None у кнопки "next" ---
-    next_btn = soup.select_one('.pager__item.pager__item--next a')
-    last_btn = soup.select_one('.pager__item.pager__item--last a')
-    if not next_btn or not last_btn:
-        break
-    # -------------------------------------------------
+            # --- Статистика по месяцам ---
+            try:
+                date_obj = datetime.strptime(date_tag, '%d.%m.%Y')
+                month_key = date_obj.strftime('%B %Y')
+                monthly_count[month_key] += 1
+            except:
+                pass
 
-    current_url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + next_btn.get('href')
-    print(current_url)
-    if current_url == soup.select_one('.pager__item.pager__item--last a').get('href'):
-        break
-    page += 1
+        # --- Пагинация ---
+        next_btn = soup.select_one('.pager__item.pager__item--next a')
+        if not next_btn:
+            print("Кнопка 'Следующая' не найдена, завершаем.")
+            break
 
-connection.close()
+        current_url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + next_btn.get('href')
+        print(f"--> Переход на страницу {page + 1}: {current_url}")
+        page += 1
+
+    print(f"\nОбработано страниц: {page}")
+
+    # --- Сохраняем изменения и закрываем БД ---
+    connection.commit()
+    connection.close()
+    print("Данные записаны в monitoring.db")
+    time.sleep(INTERVAL)
+
+# --- Статистика по месяцам ---
+print("\n" + "=" * 50)
+print("СТАТИСТИКА ПО МЕСЯЦАМ")
+print("=" * 50)
+print(f"{'Месяц':<20} {'Количество новостей':<20}")
+print("-" * 50)
+for month, count in sorted(monthly_count.items(), key=lambda x: datetime.strptime(x[0], '%B %Y')):
+    print(f"{month:<20} {count:<20}")
+print("-" * 50)
+print(f"{'ИТОГО:':<20} {sum(monthly_count.values()):<20}")
+print("=" * 50)
