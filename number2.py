@@ -3,15 +3,14 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from collections import defaultdict
-import matplotlib.pyplot as plt
 import time
 
 
 url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created='
 
 
-# --- Подключение к БД ---
-while True:
+
+while 1:
     connection = sqlite3.connect('monitoring.db')
     cursor = connection.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS Users(
@@ -23,10 +22,10 @@ while True:
         category TEXT);
         ''')
     MAX_PAGES = 10
-    INTERVAL = 60
+    INTERVAL = 30
     page = 1
     monthly_count = defaultdict(int)
-
+    duplicate_found = 0
 
 
     while page <= MAX_PAGES:
@@ -58,25 +57,26 @@ while True:
             title_tag = link_tag.text.strip()
             date_tag = date_tag_elem.text.strip()
             now = datetime.now().strftime('%d.%m.%Y %H:%M')
-            print(htt, title_tag, date_tag)
 
-            # --- Запись в БД (с защитой от дублей) ---
+
             cursor.execute('SELECT 1 FROM Users WHERE http = ?', (htt,))
             if cursor.fetchone() is None:
                 cursor.execute(
                     'INSERT INTO Users(head, date, http, timeficks, category) VALUES (?, ?, ?, ?, ?)',
                     (title_tag, date_tag, htt, now, 'Международное сотрудничество')
                 )
-
-            # --- Статистика по месяцам ---
+                print('Найдена новая новость: ', htt, title_tag, date_tag)
+            else:
+                duplicate_found = 1
+                break
             try:
                 date_obj = datetime.strptime(date_tag, '%d.%m.%Y')
                 month_key = date_obj.strftime('%B %Y')
                 monthly_count[month_key] += 1
             except:
                 pass
-
-        # --- Пагинация ---
+        if duplicate_found:
+            break
         next_btn = soup.select_one('.pager__item.pager__item--next a')
         if not next_btn:
             print("Кнопка 'Следующая' не найдена, завершаем.")
@@ -88,20 +88,7 @@ while True:
 
     print(f"\nОбработано страниц: {page}")
 
-    # --- Сохраняем изменения и закрываем БД ---
     connection.commit()
     connection.close()
     print("Данные записаны в monitoring.db")
     time.sleep(INTERVAL)
-
-# --- Статистика по месяцам ---
-print("\n" + "=" * 50)
-print("СТАТИСТИКА ПО МЕСЯЦАМ")
-print("=" * 50)
-print(f"{'Месяц':<20} {'Количество новостей':<20}")
-print("-" * 50)
-for month, count in sorted(monthly_count.items(), key=lambda x: datetime.strptime(x[0], '%B %Y')):
-    print(f"{month:<20} {count:<20}")
-print("-" * 50)
-print(f"{'ИТОГО:':<20} {sum(monthly_count.values()):<20}")
-print("=" * 50)
