@@ -1,126 +1,80 @@
-import csv
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-from collections import defaultdict
-import matplotlib.pyplot as plt
-from docx import Document
-from docx.shared import Inches
+def solve_party():
+    # Надежное считывание n и m
+    line = input().split()
+    while len(line) < 2:
+        line += input().split()
+    n, m = map(int, line)
 
-monthly_count = defaultdict(int)
-all_news_data = []
+    total_cells = n * m
+    field = []
 
-url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created='
-response = requests.get(url)
-html = response.text
-soup = BeautifulSoup(html, 'html.parser')
+    # Считываем строки, убираем пробелы внутри строки
+    for _ in range(n):
+        row = input().replace(" ", "").strip()
+        # Если строка пустая (например, из-за лишнего переноса), пропускаем
+        while len(row) == 0:
+            row = input().replace(" ", "").strip()
+        field.extend(list(row))
 
-with open('mai_news.csv', 'w', newline='', encoding='utf-8-sig') as file:
-    writer = csv.writer(file)
-    writer.writerow(['Ссылка', 'Заголовок', 'Дата'])
+    # Проверка на соответствие размера
+    if len(field) != total_cells:
+        # Если размер не совпадает, значит, данные некорректны
+        # Но по условию задачи такого быть не должно
+        pass
 
-    page = 1
-    while True:
-        if page == 1:
-            current_url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created='
+    visit_time = [-1] * total_cells
+    queue = []
+    read_ptr = 0
+    students_left = 0
 
-        if page > 1:
-            try:
-                response = requests.get(current_url, timeout=10)
-            except requests.exceptions.RequestException as e:
-                print(f"Ошибка запроса (страница {page}): {e}")
-                print("Прерываем парсинг, переходим к отчёту...")
-                break
-            html = response.text
-            soup = BeautifulSoup(html, 'html.parser')
-        news = soup.select('.newsItem')
+    for i in range(total_cells):
+        char = field[i]
+        if char == 'D':
+            visit_time[i] = 0
+            queue.append(i)
+        elif char == 'S':
+            students_left += 1
 
-        if not news:
-            break
+    if students_left == 0:
+        print(0)
+        return
 
-        for new in news:
-            link_tag = new.select_one('.boldLink')
-            date_tag_elem = new.select_one('.newsItem-date')
-            if not link_tag or not date_tag_elem:
+    if not queue:
+        print(-1)
+        return
+
+    answer_time = 0
+    offsets = [-m, m, -1, 1]
+
+    while read_ptr < len(queue):
+        curr = queue[read_ptr]
+        read_ptr += 1
+        curr_time = visit_time[curr]
+
+        if field[curr] == 'S':
+            students_left -= 1
+            if curr_time > answer_time:
+                answer_time = curr_time
+
+        for step in offsets:
+            nxt = curr + step
+
+            # Проверка на выход за границы строки
+            if step == -1 and curr % m == 0:
+                continue
+            if step == 1 and curr % m == m - 1:
                 continue
 
+            if 0 <= nxt < total_cells:
+                if field[nxt] != '*' and visit_time[nxt] == -1:
+                    visit_time[nxt] = curr_time + 1
+                    queue.append(nxt)
 
-            htt = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + link_tag.get('href')
-            title_tag = link_tag.text.strip()
-            date_tag = date_tag_elem.text.strip()
-            print(htt, title_tag, date_tag)
-            writer.writerow([htt, title_tag, date_tag])
-
-
-            all_news_data.append({'link': htt, 'title': title_tag, 'date': date_tag})
-
-
-            try:
-                date_obj = datetime.strptime(date_tag, '%d.%m.%Y')
-                month_key = date_obj.strftime('%B %Y')
-                monthly_count[month_key] += 1
-            except:
-                pass
+    if students_left == 0:
+        print(answer_time)
+    else:
+        print(-1)
 
 
-        next_btn = soup.select_one('.pager__item.pager__item--next a')
-        last_btn = soup.select_one('.pager__item.pager__item--last a')
-        if not next_btn or not last_btn:
-            break
-
-        current_url = 'https://media.kpfu.ru/news?kn%5B0%5D=Международное%20сотрудничество&created=' + next_btn.get('href')
-        print(current_url)
-        if current_url == soup.select_one('.pager__item.pager__item--last a').get('href'):
-            break
-        page += 1
-
-print("\n" + "=" * 50)
-print("СТАТИСТИКА ПО МЕСЯЦАМ")
-print("=" * 50)
-print(f"{'Месяц':<20} {'Количество новостей':<20}")
-print("-" * 50)
-for month, count in sorted(monthly_count.items(), key=lambda x: datetime.strptime(x[0], '%B %Y')):
-    print(f"{month:<20} {count:<20}")
-print("-" * 50)
-print(f"{'ИТОГО:':<20} {sum(monthly_count.values()):<20}")
-print("=" * 50)
-
-
-# построение графика распределения по месяцам
-
-if monthly_count:
-    sorted_months = sorted(monthly_count.keys(), key=lambda x: datetime.strptime(x, '%B %Y'))
-    counts = [monthly_count[m] for m in sorted_months]
-
-    plt.figure(figsize=(10, 6))
-    plt.bar(sorted_months, counts, color='skyblue')
-    plt.title('Распределение новостей по месяцам (Международное сотрудничество)')
-    plt.xlabel('Месяц')
-    plt.ylabel('Количество новостей')
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
-    plt.savefig('news_chart.png')
-    print("\nГрафик сохранён в news_chart.png")
-
-    doc = Document()
-    doc.add_heading('Отчёт по новостям (Международное сотрудничество)', 0)
-
-    doc.add_heading('График распределения по месяцам', level=1)
-    doc.add_picture('news_chart.png', width=Inches(6.0))
-
-    doc.add_heading('Таблица публикаций', level=1)
-    table = doc.add_table(rows=1, cols=3)
-    table.style = 'Table Grid'
-    hdr = table.rows[0].cells
-    hdr[0].text = 'Ссылка'
-    hdr[1].text = 'Заголовок'
-    hdr[2].text = 'Дата'
-
-    for item in all_news_data:
-        row = table.add_row().cells
-        row[0].text = item['link']
-        row[1].text = item['title']
-        row[2].text = item['date']
-
-    doc.save('news_report.docx')
-    print("DOCX-отчёт сохранён в news_report.docx")
+if __name__ == "__main__":
+    solve_party()

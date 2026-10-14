@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
@@ -26,8 +27,9 @@ all_category = ["Наука и инновации", "Образование", "�
 
 SERVICE_KEYS = {"Главные новости"}
 
-DB_NAME = 'news.db'
-MAX_PAGES = 15
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, '..', 'news.db')
+MAX_PAGES = 5
 INTERVAL = 30
 REQUEST_TIMEOUT = 10
 
@@ -65,9 +67,18 @@ def init_db(name_bd=DB_NAME):
             published_date TEXT NOT NULL,
             category_id INTEGER NOT NULL,
             university_id INTEGER NOT NULL,
-            added_at TEXT DEFAULT (datetime('now'))
+            added_at TEXT DEFAULT (datetime('now')),
+            content TEXT DEFAULT 'no text'
         );
     ''')
+
+    # ---- АВТО-МИГРАЦИЯ: добавляем content, если его нет ----
+    cursor.execute("PRAGMA table_info(news)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if 'content' not in columns:
+        cursor.execute("ALTER TABLE news ADD COLUMN content TEXT DEFAULT 'no text'")
+        print("[MIGRATION] Добавлен столбец content в news")
+    # ---------------------------------------------------------
 
     for name in all_category:
         cursor.execute('SELECT 1 FROM news_categories WHERE category_id = ?', (CATEGORY_ID[name],))
@@ -102,8 +113,18 @@ def get_university_id(cursor, name=DEFAULT_UNIVERSITY):
     row = cursor.fetchone()
     if row:
         return row[0]
-    cursor.execute('INSERT INTO universities (name) VALUES (?)', (name,))
-    return cursor.lastrowid
+
+    # явно передаём university_id = MAX + 1
+    row = cursor.execute(
+        'SELECT COALESCE(MAX(university_id), 0) + 1 FROM universities'
+    ).fetchone()
+    new_id = row[0]
+
+    cursor.execute(
+        'INSERT INTO universities (university_id, name) VALUES (?, ?)',
+        (new_id, name)
+    )
+    return new_id
 
 
 def fetch_html(url):
@@ -125,7 +146,10 @@ def parse_page(html):
         if not link_tag or not date_tag:
             continue
 
-        # дата: '15.09.2026' → '2026-09-15 00:00:00'
+        # content ищем ВНУТРИ этого блока
+        content_tag = block.select_one('.newsItem-text')
+        content = content_tag.get_text(' ', strip=True) if content_tag else 'no text'
+
         raw_date = date_tag.text.strip()
         try:
             dt = datetime.strptime(raw_date, '%d.%m.%Y')
@@ -137,6 +161,7 @@ def parse_page(html):
             'title': link_tag.text.strip(),
             'link': 'https://media.kpfu.ru' + link_tag.get('href', ''),
             'published_date': published_date,
+            'content': content,
         })
     return items
 
@@ -171,18 +196,22 @@ def save_news(cursor, item):
     """INSERT OR IGNORE — если link уже есть, строка не вставится."""
     category_id = category_url(item['link'])
     university_id = get_university_id(cursor, DEFAULT_UNIVERSITY)
+    content = item.get('content', 'no text')
 
     cursor.execute(
         '''INSERT OR IGNORE INTO news
-           (title, link, published_date, category_id, university_id)
-           VALUES (?, ?, ?, ?, ?)''',
-        (item['title'], item['link'], item['published_date'], category_id, university_id)
+           (title, link, published_date, category_id, university_id, content)
+           VALUES (?, ?, ?, ?, ?, ?)''',
+        (item['title'], item['link'], item['published_date'],
+         category_id, university_id, content)
     )
 
     if cursor.rowcount == 0:
         return False   # дубликат
+
     print('Найдена новая новость:', item['link'], item['title'],
-          item['published_date'], '| cat_id =', category_id, '| uni_id =', university_id)
+          item['published_date'], '| cat_id =', category_id,
+          '| uni_id =', university_id)
     return True
 
 
@@ -242,3 +271,7 @@ def parse():
         connection.rollback()
     finally:
         connection.close()
+
+
+if __name__ == '__main__':
+    parse()
