@@ -1,0 +1,24 @@
+{
+  "interval_minutes": 1,
+  "news_db": "news.db",
+  "users_db": "users.db",
+  "output_file": "send_list.txt",
+  "parsers_dir": "parsers_dir",
+
+  "default_university": "КФУ",
+  "default_university_id": 1,
+  "default_category": "Без категории",
+
+  "all_category": [
+    "Наука и инновации",
+    "Образование",
+    "Студенческая жизнь",
+    "Спорт",
+    "Культура и творчество",
+    "Международная деятельность",
+    "Сотрудничество и партнёрство",
+    "Объявления и события",
+    "Абитуриентам",
+    "Без категории"
+  ]
+}
