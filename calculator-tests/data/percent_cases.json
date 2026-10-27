@@ -1,0 +1,28 @@
+[
+  {
+    "Square Area": {
+      "a": 5,
+      "expected": 25
+    }
+  },
+  {
+    "Circle Area": {
+      "radius": 0,
+      "expected": 0
+    }
+  },
+  {
+    "Cylinder Volume": {
+      "radius": -5,
+      "height": 10,
+      "expected": 785.3981634
+  }
+  },
+  {
+    "Rectangle Area": {
+      "a": 99999,
+      "b": 0,
+      "expected": 0
+    }
+  }
+]
